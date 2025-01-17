@@ -1,0 +1,296 @@
+﻿@page "/"
+@inject HttpClientService HttpClientService
+@inject IJSRuntime JSRuntime
+
+<main id="main-content" class="min-h-screen pt-20 px-6 pb-32 bg-gradient-to-b from-purple-600 to-white">
+    <div>
+        <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div class="p-4 border-b border-gray-100">
+                <h2 class="text-xl font-semibold text-gray-800">Your Music</h2>
+            </div>
+            <div class="divide-y divide-gray-100">
+                @foreach (var song in SongList)
+                {
+                    <div class="flex items-center p-4 hover:bg-purple-50 transition-colors">
+                        <div class="flex-shrink-0">
+                            <i class="fa-solid fa-play text-purple-600 hover:text-purple-700 cursor-pointer" @onclick="() => PlaySong(song.FileName)"></i>
+                        </div>
+                        <div class="ml-4 flex-grow">
+                            <h3 class="text-gray-800 font-medium">@song.Title</h3>
+                            <p class="text-gray-500 text-sm">@song.Artist - @song.Album</p>
+                        </div>
+                        <div class="text-gray-500 text-sm">@song.Duration?.ToString("mm\\:ss")</div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</main>
+
+
+<!-- Play Bar -->
+<div id="playbar" class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 z-50">
+    @if (!string.IsNullOrEmpty(CurrentSong))
+    {
+        <div class="max-w-6xl mx-auto flex items-center justify-between">
+            <!-- Current Song Info -->
+            <div class="flex items-center space-x-4">
+                <div>
+                    <h4 class="text-gray-800 font-medium">@CurrentSong</h4>
+                    <p class="text-gray-500 text-sm">Playing Now</p>
+                </div>
+            </div>
+
+            <!-- Playback Controls -->
+            <div class="flex flex-col items-center flex-grow mx-8">
+                <div class="flex items-center space-x-6">
+                    <i class="fa-solid fa-backward-step text-gray-600 hover:text-purple-600 cursor-pointer" @onclick="PlayPrevious"></i>
+                    <i class="fa-solid @(IsPlaying ? "fa-circle-pause" : "fa-circle-play") text-2xl text-purple-600 hover:text-purple-700 cursor-pointer" @onclick="TogglePlayPause"></i>
+                    <i class="fa-solid fa-forward-step text-gray-600 hover:text-purple-600 cursor-pointer" @onclick="PlayNext"></i>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="w-full mt-2 flex items-center space-x-3">
+                    <span class="text-xs text-gray-500">@CurrentPosition.ToString(@"mm\:ss")</span>
+                    <div class="flex-grow bg-gray-200 rounded-full h-1 relative cursor-pointer">
+                        <div class="bg-purple-600 h-1 rounded-full" style="width:@ProgressPercentage%;"></div>
+                    </div>
+                    <span class="text-xs text-gray-500">@TotalDuration.ToString(@"mm\:ss")</span>
+                </div>
+            </div>
+
+            <!-- Volume Controls -->
+            <div class="flex items-center space-x-4">
+                <i class="fa-solid fa-volume-high text-gray-600 hover:text-purple-600 cursor-pointer"></i>
+                <input type="range" class="w-24" min="0" max="100" step="1" value="@VolumePercentage" @oninput="async (e) => { VolumePercentage = Convert.ToDouble(e.Value); await SetVolume(); }" />
+            </div>
+        </div>
+    }
+</div>
+
+<!-- Audio Element -->
+<audio @ref="AudioPlayerRef" @onloadeddata="OnAudioLoaded" @onended="OnAudioEnded" @ontimeupdate="UpdateProgress" />
+
+<!-- Add Song Button -->
+<button id="add-song-button" class="fixed bottom-24 right-6 bg-purple-600 hover:bg-purple-700 text-white rounded-full p-4 shadow-lg transition-colors" @onclick="ShowUploadModal">
+    <i class="fa-solid fa-plus text-xl"></i>
+</button>
+
+<!-- Upload Modal -->
+@if (IsUploadModalVisible)
+{
+    <div id="upload-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-semibold text-gray-800">Upload New Song</h3>
+                <i class="fa-solid fa-xmark text-gray-500 hover:text-gray-700 cursor-pointer" @onclick="CloseUploadModal"></i>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Song Title</label>
+                    <input type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent" @bind="MusicModel.Title" placeholder="Enter song title">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Artist</label>
+                    <input type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent" @bind="MusicModel.Artist" placeholder="Enter artist name">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Album</label>
+                    <input type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent" @bind="MusicModel.Album" placeholder="Enter album name">
+                </div>
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                    <i class="fa-solid fa-cloud-arrow-up text-3xl text-gray-400 mb-2"></i>
+                    <p class="text-gray-600">Drag and drop your audio file here or click to browse</p>
+                    <InputFile OnChange="HandleFileChange" />
+                </div>
+                <button class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors" @onclick="UploadFile">
+                    Upload Song
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+
+@code {
+    private bool IsUploadModalVisible = false;
+    private IBrowserFile? SelectedFile;
+    private string UploadStatus = string.Empty;
+    private List<Music> SongList = new();
+    private string CurrentSong = string.Empty;
+    private bool IsPlaying = false;
+    private bool IsAudioReady = false;
+    private TimeSpan CurrentPosition = TimeSpan.Zero;
+    private TimeSpan TotalDuration = TimeSpan.Zero;
+    private double ProgressPercentage => (CurrentPosition.TotalSeconds / TotalDuration.TotalSeconds) * 100;
+    private double VolumePercentage = 50;
+    private ElementReference AudioPlayerRef;
+
+    private Music MusicModel = new Music();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSongList();
+    }
+
+    private async Task LoadSongList()
+    {
+        try
+        {
+            using var client = HttpClientService.Create();
+            SongList = await client.GetFromJsonAsync<List<Music>>("/api/music/list") ?? new List<Music>();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading songs: {ex.Message}");
+        }
+    }
+
+    private void ShowUploadModal()
+    {
+        IsUploadModalVisible = true;
+        UploadStatus = string.Empty;
+    }
+
+    private void CloseUploadModal()
+    {
+        IsUploadModalVisible = false;
+        MusicModel = new Music();
+        SelectedFile = null;
+    }
+
+    private void HandleFileChange(InputFileChangeEventArgs e)
+    {
+        SelectedFile = e.File;
+    }
+
+    private async Task UploadFile()
+    {
+        if (SelectedFile == null)
+        {
+            UploadStatus = "Please select an MP3 file.";
+            return;
+        }
+
+        if (!SelectedFile.Name.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+        {
+            UploadStatus = "Only MP3 files are allowed.";
+            return;
+        }
+
+        try
+        {
+            var content = new MultipartFormDataContent();
+            var fileStreamContent = new StreamContent(SelectedFile.OpenReadStream(10 * 1024 * 1024)); // Limit to 10 MB
+            fileStreamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("audio/mpeg");
+            content.Add(fileStreamContent, "file", SelectedFile.Name);
+
+            content.Add(new StringContent(MusicModel.Title ?? string.Empty), "title");
+            content.Add(new StringContent(MusicModel.Artist ?? string.Empty), "artist");
+            content.Add(new StringContent(MusicModel.Album ?? string.Empty), "album");
+
+            using var client = HttpClientService.Create();
+            var response = await client.PostAsync("/api/music/upload", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                UploadStatus = "Upload successful!";
+                MusicModel = new Music();
+                IsUploadModalVisible = false;
+                await LoadSongList();
+            }
+            else
+            {
+                UploadStatus = "Upload failed.";
+            }
+        }
+        catch (Exception ex)
+        {
+            UploadStatus = $"Error uploading file: {ex.Message}";
+        }
+    }
+
+    private async Task PlaySong(string fileName)
+    {
+        CurrentSong = fileName;
+        IsPlaying = true;
+        CurrentPosition = TimeSpan.Zero;
+        TotalDuration = TimeSpan.Zero;
+        IsAudioReady = false;
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(fileName);
+        var file = Convert.ToBase64String(bytes);
+
+        var audioSource = $"{HttpClientService.BaseAddress}/api/music/stream/{file}";
+        await JSRuntime.InvokeVoidAsync("setAudioSource", AudioPlayerRef, audioSource);
+        await JSRuntime.InvokeVoidAsync("playAudio", AudioPlayerRef);
+        IsPlaying = true;
+    }
+
+    private async Task TogglePlayPause()
+    {
+        if (IsPlaying)
+        {
+            await JSRuntime.InvokeVoidAsync("pauseAudio", AudioPlayerRef);
+        }
+        else
+        {
+            await JSRuntime.InvokeVoidAsync("playAudio", AudioPlayerRef);
+        }
+        IsPlaying = !IsPlaying;
+    }
+
+    private async Task PlayNext()
+    {
+        var currentIndex = SongList.FindIndex(s => s.FileName == CurrentSong);
+        if (currentIndex < SongList.Count - 1)
+        {
+            await PlaySong(SongList[currentIndex + 1].FileName);
+        }
+    }
+
+    private async Task PlayPrevious()
+    {
+        var currentIndex = SongList.FindIndex(s => s.FileName == CurrentSong);
+        if (currentIndex > 0)
+        {
+            await PlaySong(SongList[currentIndex - 1].FileName);
+        }
+    }
+
+    private async Task UpdateProgress()
+    {
+        if (!IsAudioReady)
+            return;
+
+        var currentTimeResult = await JSRuntime.InvokeAsync<double?>("getAudioCurrentTime", AudioPlayerRef);
+        if (currentTimeResult.HasValue)
+        {
+            CurrentPosition = TimeSpan.FromSeconds(currentTimeResult.Value);
+        }
+
+        var durationResult = await JSRuntime.InvokeAsync<double?>("getAudioDuration", AudioPlayerRef);
+        if (durationResult.HasValue)
+        {
+            TotalDuration = TimeSpan.FromSeconds(durationResult.Value);
+        }
+    }
+
+    private void OnAudioLoaded()
+    {
+        IsAudioReady = true;
+    }
+
+    private async Task OnAudioEnded()
+    {
+        IsPlaying = false;
+        await PlayNext();
+    }
+
+    private async Task SetVolume()
+    {
+        var volume = VolumePercentage / 100;
+        await JSRuntime.InvokeVoidAsync("setAudioVolume", AudioPlayerRef, volume);
+    }
+}
+
